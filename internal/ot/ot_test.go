@@ -112,6 +112,9 @@ func TestApply(t *testing.T) {
 		{name: "non-empty text with empty operation", text: "hi", op: newOp(), wantErr: true},
 		{name: "base length counted in bytes", text: "😀", op: newOp(Retain(4)), wantErr: true},
 
+		// Text must be valid UTF-8
+		{name: "invalid UTF-8 text", text: "a\xffb", op: newOp(Retain(3)), wantErr: true},
+
 		// Apply must reject operations that fail Validate
 		{name: "invalid component", text: "", op: Operation{Components: []Component{{}}}, wantErr: true},
 		{name: "wrong target length", text: "hello", op: Operation{Components: []Component{Retain(5)}, BaseLength: 5, TargetLength: 6}, wantErr: true},
