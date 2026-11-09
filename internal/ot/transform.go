@@ -10,10 +10,10 @@ import (
 // which applies a after b, and bPrime, which applies b after a. When both
 // insert at the same position, a's text goes first.
 func Transform(a, b Operation) (Operation, Operation, error) {
-	if err:= Validate(a); err != nil {
+	if err := Validate(a); err != nil {
 		return Operation{}, Operation{}, fmt.Errorf("invalid a: %w", err)
 	}
-	if err:= Validate(b); err != nil {
+	if err := Validate(b); err != nil {
 		return Operation{}, Operation{}, fmt.Errorf("invalid b: %w", err)
 	}
 	if a.BaseLength != b.BaseLength {
@@ -23,7 +23,7 @@ func Transform(a, b Operation) (Operation, Operation, error) {
 	a, b = Normalize(a), Normalize(b)
 
 	var aPrime, bPrime Operation
-	
+
 	var ca, cb Component
 	var haveA, haveB bool
 	ia, ib := 0, 0
@@ -59,13 +59,13 @@ func Transform(a, b Operation) (Operation, Operation, error) {
 		}
 		n := min(ca.count, cb.count)
 		switch {
-			case ca.kind == RetainKind && cb.kind == RetainKind:
-				aPrime.Components = append(aPrime.Components, Retain(n))
-				bPrime.Components = append(bPrime.Components, Retain(n))
-			case ca.kind == DeleteKind && cb.kind == RetainKind:
-				aPrime.Components = append(aPrime.Components, Delete(n))
-			case ca.kind == RetainKind && cb.kind == DeleteKind:
-				bPrime.Components = append(bPrime.Components, Delete(n))
+		case ca.kind == RetainKind && cb.kind == RetainKind:
+			aPrime.Components = append(aPrime.Components, Retain(n))
+			bPrime.Components = append(bPrime.Components, Retain(n))
+		case ca.kind == DeleteKind && cb.kind == RetainKind:
+			aPrime.Components = append(aPrime.Components, Delete(n))
+		case ca.kind == RetainKind && cb.kind == DeleteKind:
+			bPrime.Components = append(bPrime.Components, Delete(n))
 		}
 
 		ca.count -= n

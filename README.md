@@ -8,7 +8,7 @@ Clients send edits over WebSocket, the server rebases each edit against any edit
 | Package             | Status          |
 | ------------------- | --------------- |
 | `internal/ot`       | Implemented, tested |
-| `internal/document` | `Document` implemented and tested; `Manager` not started |
+| `internal/document` | Implemented, tested |
 | `internal/server`   | Not started     |
 | `proto/`            | Not started     |
 
@@ -96,7 +96,19 @@ func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Oper
 
 `Submit` returns an error, and leaves the document unchanged, if the op is invalid, if `baseRevision` is ahead of the current revision, or if the op's `BaseLength` doesn't match the document at `baseRevision`.
 
-**Planned:** a `Manager` that holds many documents by ID behind a `sync.RWMutex`.
+`Manager` holds many documents by ID. Its `sync.RWMutex` only guards the map, so different documents can be edited in parallel.
+
+```go
+// NewManager returns an empty Manager.
+func NewManager() *Manager
+
+// Get returns the document with the given ID, or nil and false if it doesn't exist.
+func (m *Manager) Get(id string) (*Document, bool)
+
+// GetOrCreate returns the document with the given ID, creating it with initial
+// as its content if it doesn't exist. If it already exists, initial is ignored.
+func (m *Manager) GetOrCreate(id, initial string) *Document
+```
 
 ### `internal/server` (planned)
 
