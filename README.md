@@ -94,7 +94,7 @@ func (d *Document) Snapshot() (content string, revision uint64)
 func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Operation) (CommittedOperation, error)
 ```
 
-`Submit` returns an error, and leaves the document unchanged, if the op is invalid, if `baseRevision` is ahead of the current revision, or if the op's `BaseLength` doesn't match the document at `baseRevision`.
+`Submit` returns an error, and leaves the document unchanged, if the op is invalid, if `baseRevision` is ahead of the current revision, if the op's `BaseLength` doesn't match the document at `baseRevision`, or if `(clientID, opID)` was already committed with a different `baseRevision` or op (`ErrOperationIDReused`).
 
 `Manager` holds many documents by ID. Its `sync.RWMutex` only guards the map, so different documents can be edited in parallel.
 
@@ -119,8 +119,8 @@ Handles all communication: the HTTP server, WebSocket connections, protobuf enco
 - **Lengths and positions count runes, not bytes**, so multi-byte characters can't be split.
 - **Revision numbering:** a document at revision `r` has `r` committed ops. A `CommittedOperation` with `Revision == N` turns revision `N-1` into revision `N`. A client at revision `r` applies a broadcast op when its `Revision == r+1`.
 - **Tie-breaking:** when two ops insert at the same position, `Transform` puts `a`'s text first. `Submit` passes the already-committed op as `a`, so **the earlier commit goes first**. Clients must make the same choice by calling `ot.Transform(serverOp, pendingOp)`.
-- **Idempotent submits:** resending the same `(clientID, opID)` returns the original `CommittedOperation` instead of applying the op twice. A client that loses an ack (for example, after a disconnect) can safely resend.
-- **History stores rebased ops only.** Each op's effective base is its position in history, so the client's original `baseRevision` isn't kept.
+- **Idempotent submits:** resending the same `(clientID, opID)` with the same `baseRevision` and op returns the original `CommittedOperation` instead of applying the op twice. A client that loses an ack (for example, after a disconnect) can safely resend, but it must resend the op exactly as first sent, not rebased onto newer revisions. Reusing an ID with a different base or op is rejected.
+- **History stores rebased ops only.** Each op's effective base is its position in history. A separate index keyed by `(clientID, opID)` keeps each submission's original `baseRevision` and normalized op, which is used to check retries.
 
 ## Message flow
 

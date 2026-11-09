@@ -1,7 +1,9 @@
 package document
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"unicode/utf8"
@@ -170,6 +172,79 @@ func TestSubmitDuplicateIsIdempotent(t *testing.T) {
 		t.Errorf("resend Revision = %d, want original %d", again.Revision, first.Revision)
 	}
 	assertState(t, d, "Zabcd", 2)
+}
+
+func TestSubmitResultDoesNotAliasHistory(t *testing.T) {
+	d := New("abc")
+	want := ot.Normalize(insertAt(3, 3, "d"))
+
+	// Corrupt both the fresh result and a duplicate-submission result.
+	first := mustSubmit(t, d, "a", "1", 0, insertAt(3, 3, "d"))
+	first.Operation.Components[0] = ot.Delete(3)
+	dup := mustSubmit(t, d, "a", "1", 0, insertAt(3, 3, "d"))
+	if !reflect.DeepEqual(dup.Operation, want) {
+		t.Fatalf("history changed through the returned result: got %+v, want %+v", dup.Operation, want)
+	}
+	dup.Operation.Components[0] = ot.Delete(3)
+
+	again := mustSubmit(t, d, "a", "1", 0, insertAt(3, 3, "d"))
+	if !reflect.DeepEqual(again.Operation, want) {
+		t.Fatalf("history changed through a duplicate result: got %+v, want %+v", again.Operation, want)
+	}
+
+	// Rebasing from revision 0 has to go through the stored op.
+	mustSubmit(t, d, "b", "1", 0, insertAt(3, 0, "Z"))
+	assertState(t, d, "Zabcd", 2)
+}
+
+func TestSubmitRejectsReusedOpID(t *testing.T) {
+	tests := []struct {
+		name string
+		base uint64
+		op   ot.Operation
+	}{
+		{
+			name: "same op at a later base revision",
+			base: 2,
+			op:   insertAt(5, 4, "d"),
+		},
+		{
+			name: "different op at the original base revision",
+			base: 0,
+			op:   insertAt(3, 0, "X"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := New("abc")
+			mustSubmit(t, d, "a", "1", 0, insertAt(3, 3, "d"))
+			mustSubmit(t, d, "b", "1", 1, insertAt(4, 0, "Z")) // "Zabcd", rev 2
+
+			_, err := d.Submit("a", "1", tt.base, tt.op)
+			if !errors.Is(err, ErrOperationIDReused) {
+				t.Fatalf("Submit: err = %v, want ErrOperationIDReused", err)
+			}
+			assertState(t, d, "Zabcd", 2)
+		})
+	}
+}
+
+func TestSubmitDuplicateMatchesAfterNormalize(t *testing.T) {
+	d := New("abc")
+	first := mustSubmit(t, d, "a", "1", 0, insertAt(3, 3, "d"))
+
+	// The same edit, written with split components.
+	split := ot.Operation{
+		Components:   []ot.Component{ot.Retain(1), ot.Retain(2), ot.Insert("d")},
+		BaseLength:   3,
+		TargetLength: 4,
+	}
+	again := mustSubmit(t, d, "a", "1", 0, split)
+	if again.Revision != first.Revision {
+		t.Errorf("resend Revision = %d, want original %d", again.Revision, first.Revision)
+	}
+	assertState(t, d, "abcd", 1)
 }
 
 func TestSubmitSameOpIDDifferentClients(t *testing.T) {

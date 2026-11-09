@@ -1,7 +1,9 @@
 package document
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/aden-cs/parity-ot/internal/ot"
@@ -14,34 +16,44 @@ type CommittedOperation struct {
 	Operation   ot.Operation
 }
 
+// clone copies Components so callers can't modify history through the result.
+func (c CommittedOperation) clone() CommittedOperation {
+	c.Operation.Components = slices.Clone(c.Operation.Components)
+	return c
+}
+
+// ErrOperationIDReused means a committed (clientID, opID) was resubmitted with
+// a different base revision or op.
+var ErrOperationIDReused = errors.New("operation ID reused with different submission")
+
+type submissionKey struct {
+	clientID string
+	opID     string
+}
+
+// submission is the original request, kept to check retries.
+type submission struct {
+	historyIndex int
+	baseRevision uint64
+	op           ot.Operation // normalized, before rebasing
+}
+
 type Document struct {
-	mu       sync.Mutex
-	content  string
-	revision uint64
-	history  []CommittedOperation
+	mu          sync.Mutex
+	content     string
+	revision    uint64
+	history     []CommittedOperation
+	submissions map[submissionKey]submission
 }
 
 func New(content string) *Document {
-	return &Document{content: content}
+	return &Document{content: content, submissions: make(map[submissionKey]submission)}
 }
 
 func (d *Document) Snapshot() (content string, revision uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.content, d.revision
-}
-
-// findCommitted returns the committed operation matching clientID and opID,
-// if one exists. A retried op can only have been committed after its own base
-// revision, so the scan starts there. The caller must hold d.mu.
-func (d *Document) findCommitted(clientID, opID string, baseRevision uint64) (CommittedOperation, bool) {
-	for i := baseRevision; i < uint64(len(d.history)); i++ {
-		committed := d.history[i]
-		if committed.ClientID == clientID && committed.OperationID == opID {
-			return committed, true
-		}
-	}
-	return CommittedOperation{}, false
 }
 
 func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Operation) (CommittedOperation, error) {
@@ -52,15 +64,20 @@ func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Oper
 		return CommittedOperation{}, fmt.Errorf("base revision %d is greater than current revision %d", baseRevision, d.revision)
 	}
 
-	if committed, ok := d.findCommitted(clientID, opID, baseRevision); ok {
-		return committed, nil
-	}
-
 	if err := ot.Validate(op); err != nil {
 		return CommittedOperation{}, fmt.Errorf("invalid operation: %w", err)
 	}
 
 	op = ot.Normalize(op)
+	original := op
+
+	key := submissionKey{clientID, opID}
+	if prev, ok := d.submissions[key]; ok {
+		if prev.baseRevision != baseRevision || !operationsEqual(prev.op, op) {
+			return CommittedOperation{}, fmt.Errorf("%w: client %q, op %q was committed at revision %d", ErrOperationIDReused, clientID, opID, d.history[prev.historyIndex].Revision)
+		}
+		return d.history[prev.historyIndex].clone(), nil
+	}
 
 	var err error
 	for i := baseRevision; i < uint64(len(d.history)); i++ {
@@ -87,6 +104,17 @@ func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Oper
 	}
 
 	d.history = append(d.history, committedOp)
+	d.submissions[key] = submission{
+		historyIndex: len(d.history) - 1,
+		baseRevision: baseRevision,
+		op:           original,
+	}
 
-	return committedOp, nil
+	return committedOp.clone(), nil
+}
+
+func operationsEqual(a, b ot.Operation) bool {
+	return a.BaseLength == b.BaseLength &&
+		a.TargetLength == b.TargetLength &&
+		slices.Equal(a.Components, b.Components)
 }
