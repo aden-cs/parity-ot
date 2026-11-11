@@ -26,6 +26,11 @@ func (c CommittedOperation) clone() CommittedOperation {
 // a different base revision or op.
 var ErrOperationIDReused = errors.New("operation ID reused with different submission")
 
+var ErrBaseRevisionAhead = errors.New("base revision ahead of document")
+
+// ErrInvalidOperation also covers a BaseLength that doesn't match the base revision.
+var ErrInvalidOperation = errors.New("invalid operation")
+
 type submissionKey struct {
 	clientID string
 	opID     string
@@ -61,11 +66,11 @@ func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Oper
 	defer d.mu.Unlock()
 
 	if baseRevision > d.revision {
-		return CommittedOperation{}, fmt.Errorf("base revision %d is greater than current revision %d", baseRevision, d.revision)
+		return CommittedOperation{}, fmt.Errorf("%w: base revision %d, current revision %d", ErrBaseRevisionAhead, baseRevision, d.revision)
 	}
 
 	if err := ot.Validate(op); err != nil {
-		return CommittedOperation{}, fmt.Errorf("invalid operation: %w", err)
+		return CommittedOperation{}, fmt.Errorf("%w: %w", ErrInvalidOperation, err)
 	}
 
 	op = ot.Normalize(op)
@@ -84,13 +89,13 @@ func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Oper
 		prevOp := d.history[i]
 		_, op, err = ot.Transform(prevOp.Operation, op)
 		if err != nil {
-			return CommittedOperation{}, err
+			return CommittedOperation{}, fmt.Errorf("%w: %w", ErrInvalidOperation, err)
 		}
 	}
 
 	updatedContent, err := ot.Apply(op, d.content)
 	if err != nil {
-		return CommittedOperation{}, err
+		return CommittedOperation{}, fmt.Errorf("%w: %w", ErrInvalidOperation, err)
 	}
 
 	d.content = updatedContent

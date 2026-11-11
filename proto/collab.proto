@@ -1,0 +1,72 @@
+syntax = "proto3";
+package collab;
+
+option go_package = "github.com/aden-cs/parity-ot/proto;collabpb";
+
+message Component {
+  oneof kind {
+    uint32 retain = 1;
+    uint32 delete = 2;
+    string insert = 3;
+  }
+}
+
+message Operation {
+  repeated Component components = 1;
+  uint32 base_length = 2;
+  uint32 target_length = 3;
+}
+
+// client_id must be stable across reconnects.
+message Join {
+  string document_id = 1;
+  string client_id = 2;
+}
+
+message Submit {
+  string operation_id = 1;
+  uint64 base_revision = 2;
+  Operation operation = 3;
+}
+
+message ClientMessage {
+  oneof kind {
+    Join join = 1;
+    Submit submit = 2;
+  }
+}
+
+message Joined {
+  string content = 1;
+  uint64 revision = 2;
+}
+
+// Sent to all clients; it's the ack when client_id is the sender's.
+message Committed {
+  uint64 revision = 1;
+  string client_id = 2;
+  string operation_id = 3;
+  Operation operation = 4;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_INVALID_OPERATION = 1;
+  ERROR_CODE_INVALID_REVISION = 2;
+  ERROR_CODE_OPERATION_ID_REUSED = 3;
+  ERROR_CODE_BAD_REQUEST = 4;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+  string operation_id = 3;
+}
+
+message ServerMessage {
+  oneof kind {
+    Joined joined = 1;
+    Committed committed = 2;
+    Error error = 3;
+  }
+}

@@ -10,7 +10,7 @@ Clients send edits over WebSocket, the server rebases each edit against any edit
 | `internal/ot`       | Implemented, tested |
 | `internal/document` | Implemented, tested |
 | `internal/server`   | Not started     |
-| `proto/`            | Not started     |
+| `proto/`            | Implemented, generated |
 
 ## Getting started
 
@@ -29,7 +29,7 @@ cmd/parity-ot/       entry point
 internal/ot/         pure OT algorithm, no I/O or state
 internal/document/   authoritative server-side document state
 internal/server/     HTTP, WebSocket, and protobuf messaging (planned)
-proto/               wire protocol definitions (planned)
+proto/               wire protocol schema and generated Go code (collabpb)
 ```
 
 ## Packages
@@ -94,7 +94,7 @@ func (d *Document) Snapshot() (content string, revision uint64)
 func (d *Document) Submit(clientID, opID string, baseRevision uint64, op ot.Operation) (CommittedOperation, error)
 ```
 
-`Submit` returns an error, and leaves the document unchanged, if the op is invalid, if `baseRevision` is ahead of the current revision, if the op's `BaseLength` doesn't match the document at `baseRevision`, or if `(clientID, opID)` was already committed with a different `baseRevision` or op (`ErrOperationIDReused`).
+`Submit` returns an error, and leaves the document unchanged, if `baseRevision` is ahead of the current revision (`ErrBaseRevisionAhead`), if the op is malformed or its `BaseLength` doesn't match the document at `baseRevision` (`ErrInvalidOperation`), or if `(clientID, opID)` was already committed with a different `baseRevision` or op (`ErrOperationIDReused`). Check them with `errors.Is`.
 
 `Manager` holds many documents by ID. Its `sync.RWMutex` only guards the map, so different documents can be edited in parallel.
 

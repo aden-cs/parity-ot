@@ -256,29 +256,34 @@ func TestSubmitSameOpIDDifferentClients(t *testing.T) {
 
 func TestSubmitErrorsLeaveStateUnchanged(t *testing.T) {
 	tests := []struct {
-		name string
-		base uint64
-		op   ot.Operation
+		name    string
+		base    uint64
+		op      ot.Operation
+		wantErr error
 	}{
 		{
-			name: "base revision from the future",
-			base: 2,
-			op:   insertAt(3, 0, "X"),
+			name:    "base revision from the future",
+			base:    2,
+			op:      insertAt(3, 0, "X"),
+			wantErr: ErrBaseRevisionAhead,
 		},
 		{
-			name: "components disagree with declared lengths",
-			base: 1,
-			op:   ot.Operation{Components: []ot.Component{ot.Retain(3)}, BaseLength: 4, TargetLength: 4},
+			name:    "components disagree with declared lengths",
+			base:    1,
+			op:      ot.Operation{Components: []ot.Component{ot.Retain(3)}, BaseLength: 4, TargetLength: 4},
+			wantErr: ErrInvalidOperation,
 		},
 		{
-			name: "base length does not match current document",
-			base: 1,
-			op:   insertAt(10, 0, "X"),
+			name:    "base length does not match current document",
+			base:    1,
+			op:      insertAt(10, 0, "X"),
+			wantErr: ErrInvalidOperation,
 		},
 		{
-			name: "base length does not match document at base revision",
-			base: 0,
-			op:   insertAt(4, 0, "X"), // doc was 3 runes at revision 0
+			name:    "base length does not match document at base revision",
+			base:    0,
+			op:      insertAt(4, 0, "X"), // doc was 3 runes at revision 0
+			wantErr: ErrInvalidOperation,
 		},
 	}
 
@@ -287,8 +292,9 @@ func TestSubmitErrorsLeaveStateUnchanged(t *testing.T) {
 			d := New("abc")
 			mustSubmit(t, d, "a", "1", 0, insertAt(3, 3, "d")) // "abcd", rev 1
 
-			if _, err := d.Submit("b", "1", tt.base, tt.op); err == nil {
-				t.Fatal("Submit: expected error, got nil")
+			_, err := d.Submit("b", "1", tt.base, tt.op)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Submit: got error %v, want %v", err, tt.wantErr)
 			}
 			assertState(t, d, "abcd", 1)
 		})
