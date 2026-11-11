@@ -15,6 +15,18 @@ type Component struct {
 	text  string
 }
 
+func (c Component) Kind() Kind {
+	return c.kind
+}
+
+func (c Component) Count() uint32 {
+	return c.count
+}
+
+func (c Component) Text() string {
+	return c.text
+}
+
 func Retain(count uint32) Component {
 	return Component{
 		kind:  RetainKind,
